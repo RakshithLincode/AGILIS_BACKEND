@@ -1,0 +1,29 @@
+monk
+1d8d7eac220dafde8af1dfed4f3ad7cf8eb2d3e6fc365db26ae9bbe3928d963b
+2020-10-19 12:03:10.760334: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcudart.so.10.1
+1. Model Name: ssd_mobilenet_v2_320
+2. Model Name: ssd_mobilenet_v1_fpn_640
+3. Model Name: ssd_mobilenet_v2_fpnlite_320
+4. Model Name: ssd_mobilenet_v2_fpnlite_640
+5. Model Name: ssd_resnet50_v1_fpn_320
+6. Model Name: ssd_resnet50_v1_fpn_640
+7. Model Name: ssd_resnet101_v1_fpn_320
+8. Model Name: ssd_resnet101_v1_fpn_640
+9. Model Name: ssd_resnet152_v1_fpn_320
+10. Model Name: ssd_resnet152_v1_fpn_640
+11. Model Name: faster_rcnn_resnet50_v1_640
+12. Model Name: faster_rcnn_resnet50_v1_1024
+13. Model Name: faster_rcnn_resnet101_v1_640
+14. Model Name: faster_rcnn_resnet101_v1_1024
+15. Model Name: faster_rcnn_resnet152_v1_640
+16. Model Name: faster_rcnn_resnet152_v1_1024
+17. Model Name: faster_rcnn_inception_resnet_v2_640
+18. Model Name: faster_rcnn_inception_resnet_v2_1024
+19. Model Name: efficientdet_d0
+20. Model Name: efficientdet_d1
+21. Model Name: efficientdet_d2
+22. Model Name: efficientdet_d3
+23. Model Name: efficientdet_d4
+24. Model Name: efficientdet_d5
+25. Model Name: efficientdet_d6
+26. Model Name: efficientdet_d7

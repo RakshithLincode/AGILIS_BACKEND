@@ -1,0 +1,320 @@
+from fastai.vision import *
+from fastai.metrics import *
+#from constants import *
+from sklearn.metrics import classification_report
+from common.utils import MongoHelper, ExperimentDataset
+from bson import ObjectId
+from livis.celeryy import app
+from pathlib import Path
+import numpy as np
+from django.conf import settings
+import os
+import pandas as pd
+from celery import shared_task
+from bson import ObjectId
+from fastai.basics import *
+from fastai.vision.all import *
+from fastai.callback.all import *
+from fastai.vision import *
+from livis.settings import *
+
+MODEL_MAP = {"resnet34" : models.resnet34}
+
+
+
+def test_fastai():
+    config =  {"opt": "radam", "status": "initialized", "img_size": 224, "augmentations": {"flip_horizontly": True, "do_flip": True, "zoom": 0.2},
+     "metrics": ["accuracy"], "bs": 2, "dataset_id": "5ea2046403ca3b758a5727b4", "datapath": "D://Lincode//LIVIS//Datasets//new_dataset", 
+     "experiment_name": "experiment_test", 
+    "experiment_type": "classification", "lr": 0.0001, "experiment_id": "64cd166f-49ab-49d8-87c0-1f6ef27afd14", "model": "mobilenet"}
+    return train_fastai(config)
+
+
+#TODO : handle nones
+#TODO : add logging
+#TODO : include more stages as mixup, augmentations
+def add_experiment(config):
+    part_id = config.get('part_id')
+    label_list = config.get('label_list')
+    mp = MongoHelper().getCollection(part_id + '_experiment')
+    collection_obj = {
+            'status' : 'started',
+            'label_list' : label_list
+    }
+    experiment_id = mp.insert(collection_obj)
+    return experiment_id
+
+
+def train_fastai(config, experiment_id):
+  #  try:
+        #1 Get values from config
+        part_id = config.get('part_id', None)
+        experiment_name = config.get('experiment_name', None)
+        #experiment_id = config.get()
+        sz = config.get('img_size', 224)
+        lr = config.get('lr', 0.001)
+        opt = config.get('opt')
+        bs = config.get('bs' , 2)
+        model = config.get('model', "resnet34")
+        metrics = config.get('metrics', error_rate)
+        label_list = config.get('label_list',None)
+
+        #3 Set status "started" in monodb for current experiment_id (started, running, failed, success, pending)
+        #status = 'started'
+        part_collection = MongoHelper().getCollection(settings.PARTS_COLLECTION)
+        part_obj = part_collection.find_one({'_id' : ObjectId(part_id)})
+        mp = MongoHelper().getCollection(part_id + '_experiment')
+        
+        #experiment_id = mp.insert(collection_obj)    
+
+        #4 Create apropriate folders.
+        images_path = settings.TRAIN_DATA_STATIC
+        weights_path = "./experiments/{}/weights/".format(str(experiment_id))
+        logs_path = "./experiments/{}/logs/".format(str(experiment_id))
+        csv_path = "./experiments/{}/csv/".format(str(experiment_id))
+        Path(images_path).mkdir(parents=True, exist_ok=True)
+        Path(weights_path).mkdir(parents=True, exist_ok=True)
+        Path(logs_path).mkdir(parents=True, exist_ok=True)
+        Path(csv_path).mkdir(parents=True, exist_ok=True)
+        #5 Prepare image dataset via csv of tagged images in the created folder.
+        #
+        train_df, test_df = ExperimentDataset(part_id, experiment_id).to_csv('classification')
+
+        train_df.to_csv(os.path.join(csv_path, 'train.csv'),index=False)
+        
+        #6 get model
+        pre_model = MODEL_MAP.get(model)
+        np.random.seed(42)
+        df = pd.read_csv(Path(csv_path)/'train.csv')
+        #7 prepare dataset
+        # data = ImageDataBunch.from_df(df=df,path=images_path, valid_pct=0.2,ds_tfms=get_transforms(), size=sz).normalize(imagenet_stats)
+
+        data = DataBlock(blocks=(ImageBlock, MultiCategoryBlock),
+                   splitter=RandomSplitter(),
+                   get_x=ColReader(0, pref=Path(images_path)),
+                   get_y=ColReader(1, label_delim=' '),
+                   item_tfms=Resize(sz),
+                   batch_tfms=aug_transforms())
+
+        dls = ImageDataLoaders.from_df(df, Path('/root/freedom/backend/LIVIS/livis/training/'), folder='image_data', valid_pct=0.2,num_workers=0)
+
+        print(len(dls.train))
+
+        #8 Set status running in monodb for current experiment_id (started, running, failed, success, pending)
+        status = 'running'
+
+        experiment = mp.find_one({'_id' : ObjectId(experiment_id)})
+        experiment['status'] = status
+
+        mp.update_one({'_id' : experiment['_id']}, {'$set' : experiment})
+        
+
+        #9 initialize network and pass data and metrics
+        # learn = create_cnn(data, pre_model, metrics=error_rate)
+        learn = cnn_learner(dls, pre_model, metrics=partial(accuracy_multi, thresh=0.2))
+
+        defaults.device = torch.device('cuda') # makes sure the gpu is used
+        #learn.recorder.plot_loss()
+        # learn.fit_one_cycle(1)
+        # learn.fit_one_cycle(4)
+        # learn.unfreeze() # must be done before calling lr_find
+        
+        #10 Learning rate finder
+#        learn.lr_find()
+        learn.fine_tune(3, base_lr=3e-3, freeze_epochs=4)
+
+        #learn.recorder.plot_loss()
+        learn.fit_one_cycle(3, lr_max=slice(1e-5,1e-3))
+        #learn.save(experiment_name + '-stage-1')
+
+        #11 save weights to weights_path
+        learn.export(os.path.join(weights_path, experiment_id + ".pkl"))
+
+        #12 save logs to logs path
+        preds,y,losses = learn.get_preds(with_loss=True)
+        probs = np.argmax(preds, axis=1)
+        interp = ClassificationInterpretation(learn, preds, y, losses)
+        logs = {
+            "confusion_matrix" : interp.confusion_matrix().tolist(),
+            "report" : classification_report(y, probs, target_names=list(data.classes), output_dict=True),
+            "model_file" : os.path.join(weights_path, experiment_id + ".pkl")
+        }
+        # logs = {'test':'result'}
+        
+        #13 insert overall experiment details to mongo_db (path,logs,status) 
+        
+        experiment = mp.find_one({'_id' : _id})
+
+        experiment['logs'] = logs
+        experiment['status'] = 'success'
+        experiment['images_path'] = os.path.join(os.getcwd(),images_path.replace('./',''))
+        experiment['weights_path'] = os.path.join(os.getcwd(),weights_path.replace('./',''), experiment_id + ".pkl")
+        experiment['logs_path'] = os.path.join(os.getcwd(),logs_path.replace('./','')) 
+
+        mp.update_one({'_id' : experiment['_id']}, {'$set' : experiment})
+        return mp.find_one({'_id' : experiment['_id']})
+    #except:
+     #   return {"message" : "Create Experiment Failed"}
+    
+
+def train_tf(config, experiment_id):
+# try:
+    experiment_name = config.get('experiment_name', None)
+    part_id = config.get('part_id', None)
+    selected_labels = config.get('selected_labels', None)
+    images_path = settings.TRAIN_DATA_STATIC
+    experiments_directory = settings.EXPERIMENT_DATA_STATIC 
+
+    required_annotations_format = "csv"
+
+    traindf, testdf = gen_annotations(exp_id, part_id, list_of_labels_selected, get_type)
+
+    status = 'running'
+
+    part_obj = part_collection.find_one({'_id' : ObjectId(part_id)})
+
+    _id = experiment_id 
+    mp = MongoHelper().getCollection(part_id + '_experiment')
+    experiment = mp.find_one({'_id' : _id})
+    experiment['status'] = status
+    mp.update_one({'_id' : experiment['_id']}, {'$set' : experiment})
+
+    # start training
+    to_save_path = os.path.join(experiments_directory, experiment_id)
+
+    # get_env_path = subprocess.check_output("which python", shell=True)
+    # python_env_path = get_env_path.decode('utf-8').strip()
+    python_env_path = "/root/anaconda3/envs/livis_tensorflow/bin/python"
+    
+    print("{} /root/freedom/backend/LIVIS/livis/training/detection_pipelines/tf_training/train_shell.py --to_save_path '{}' --images_path '{}' --num_steps {}".format(python_env_path, to_save_path, images_path, num_steps))
+
+    os.system("{} /root/freedom/backend/LIVIS/livis/training/detection_pipelines/tf_training/train_shell.py --to_save_path '{}' --images_path '{}' --num_steps {}".format(python_env_path, to_save_path, images_path, num_steps))
+    # start_training.train_tensorflow_object_detection_api(base_config_path, to_save_path, images_path, num_steps)
+    # generate inference_graph
+
+    mp = MongoHelper().getCollection(part_id + '_experiment')
+    experiment = mp.find_one({'_id' : _id})
+    experiment['logs'] = logs
+    experiment['status'] = 'success'
+    experiment['images_path'] = os.path.join(os.getcwd(),images_path.replace('./',''))
+    experiment['weights_path'] = os.path.join(os.getcwd(),weights_path.replace('./',''), experiment_id + ".pkl")
+    experiment['logs_path'] = os.path.join(os.getcwd(),logs_path.replace('./','')) 
+    mp.update_one({'_id' : experiment['_id']}, {'$set' : experiment})
+    return mp.find_one({'_id' : experiment['_id']})
+
+    # except Exception as e:
+    #     print(e)
+    #     mp = MongoHelper().getCollection(part_id + '_experiment')
+    #     experiment = mp.find_one({'_id' : ObjectId(_id)})
+    #     experiment['status'] = 'failed'
+    #     mp.update_one({'_id' : dataset['_id']}, {'$set' : dataset})
+    #     return mp.find_one({'_id' : dataset['_id']})
+
+
+def get_experiment_status(part_id,experiment_id):
+    try:
+        mp = MongoHelper().getCollection(part_id + 'experiment')
+        return mp.find_one({'_id' : ObjectId(experiment_id)})
+        #return {"status" : mp.find_one({'_id' : _id})['status']}
+    except:        
+        return {}
+
+#@app.task(bind=True)
+@shared_task
+def process_job_request(config, experiment_id):
+    if config['type'] == 'fastai':
+        return train_fastai(config,experiment_id)
+    if config['type'] == 'tf':
+        return train_tf(config, experiment_id)
+        # return None
+
+
+def getModel(iden, typ= 'fastai'):
+    if typ == 'fastai':
+        model_path = os.path.join(EXPERIMENT_SAVE_PATH, iden + '.pkl')
+        if os.path.exists(model_path):
+            learn = load_learner(EXPERIMENT_SAVE_PATH, iden + '.pkl')
+        return learn
+    if typ == 'tf':
+        tf_model = get_tf_model(iden)
+        return tf_model 
+
+def train_tensorflow(config):
+    ## do processing here 
+    return None
+
+def get_tf_model(iden):
+    ## write tf model load 
+    return None
+
+
+def get_running_experiment_status(part_id):
+    try:
+
+        mp = MongoHelper().getCollection(str(part_id) + '_experiment')
+
+        exp = [i for i in mp.find()]
+
+        list_of_running = []
+
+        for i in exp:
+            if i["status"] == "running":
+                list_of_running.append(i)
+        
+        data={}
+        data["running_experiments"] = list_of_running
+        return data
+        #return {"status" : mp.find_one({'_id' : _id})['status']}
+    except:        
+        return {}
+
+def get_all_running_experiments_status():
+
+    mp = MongoHelper().getCollection(PARTS_COLLECTION)
+    
+    parts = [p for p in mp.find({"$and" : [{"isdeleted": False}, { "isdeleted" : {"$exists" : True}}]}).sort( "$natural", -1 )]
+
+    #parts = [p for p in mp.find({"$and" : [{"isdeleted": False}, { "isdeleted" : {"$exists" : True}}]}).skip(skip).limit(limit)]
+    list_of_running = []
+
+    for i in parts:
+
+        part_obj_id = i["_id"]
+        mp = MongoHelper().getCollection(str(part_obj_id) + '_experiment')
+
+        exp = [i for i in mp.find()]
+
+        for i in exp:
+            if i["status"] == "running":
+                list_of_running.append(i)
+        
+    data={}
+    data["running_experiments"] = list_of_running
+    return data
+
+
+def deploy_experiment_util(data):
+
+    part_id = data["part_id"]
+    experiment_id = data["experiment_id"]
+    workstation_ids = data["workstation_ids"]
+
+
+    try:
+
+        mp = MongoHelper().getCollection(str(part_id) + '_experiment')
+        exp = [i for i in mp.find()]
+        for i in exp:
+            if str(ObjectId(i['_id']))==str(experiment_id):
+                collection_obj = {
+                    'deployed':True,
+                    'deployed_on_workstations': workstation_ids
+                }
+
+                mp.update({'_id' : ObjectId(i['_id'])}, {'$set' : collection_obj})
+
+                return i
+        
+    except Exception as e:   
+        print(e)     
+        return {}
