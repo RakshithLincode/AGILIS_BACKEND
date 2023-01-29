@@ -318,13 +318,9 @@ def start_real_inspection(data1,inspection_id):
     key_list = []
 
     for cam in data['camera_config']['cameras']:
-        camera_index = cam['camera_id']
-        camera_name = cam['camera_name']
         key = RedisKeyBuilderServer(workstation_id).get_key(cam['camera_id'],'original-frame') 
         cam_list.append(cam['camera_name'])
         key_list.append(key)
-
-
 
     ########### jig details 
 
@@ -339,20 +335,20 @@ def start_real_inspection(data1,inspection_id):
 
     s=s[0]
 
-    gvm_labelmap_pth = s['gvm_labelmap_pth']
-    gvx_labelmap_pth = s['gvx_labelmap_pth']
-    gvm_num_classes = s['gvm_num_classes']
-    gvx_num_classes = s['gvx_num_classes']
-    gvm_saved_model_pth = s['gvm_saved_model_pth']
-    gvx_saved_model_pth = s['gvx_saved_model_pth']
+    # gvm_labelmap_pth = s['gvm_labelmap_pth']
+    # gvx_labelmap_pth = s['gvx_labelmap_pth']
+    # gvm_num_classes = s['gvm_num_classes']
+    # gvx_num_classes = s['gvx_num_classes']
+    # gvm_saved_model_pth = s['gvm_saved_model_pth']
+    # gvx_saved_model_pth = s['gvx_saved_model_pth']
 
-    all_labelmap_pth = s['all_labelmap_pth']
-    all_num_classes = s['all_num_classes']
-    all_saved_model_pth = s['all_saved_model_pth']
+    # all_labelmap_pth = s['all_labelmap_pth']
+    # all_num_classes = s['all_num_classes']
+    # all_saved_model_pth = s['all_saved_model_pth']
 
-    black_labelmap_pth = s['black_line_labelmap_pth']
-    #black_num_classes = s['black_line_num_classes']
-    black_saved_model_pth = s['black_line_saved_model_pth']
+    # black_labelmap_pth = s['black_line_labelmap_pth']
+    # #black_num_classes = s['black_line_num_classes']
+    # black_saved_model_pth = s['black_line_saved_model_pth']
 
 
 
@@ -422,7 +418,6 @@ def start_real_inspection(data1,inspection_id):
         else:
             full_img = None
             
-        
     except:
         message = "error in full_img/regions not set"
         status_code = 400
@@ -432,13 +427,6 @@ def start_real_inspection(data1,inspection_id):
         message = "error in full_img/regions not set"
         status_code = 400
         return message,status_code
-
-    
-
-
-
-
-
 
     def send_crop_pred(j,next_region,width,height,frame,port):
 
@@ -529,11 +517,7 @@ def start_real_inspection(data1,inspection_id):
                 elif j["cls"] == regionc:
                     print("went in pred3 funct")
                     pred3 = send_crop_pred(j,regions[3],width,height,frame,port)
-
-                
-
             else:
-
                 if j["cls"] == regiona:
                     pred1 = send_crop_pred(j,regions[1],width,height,frame,port)
 

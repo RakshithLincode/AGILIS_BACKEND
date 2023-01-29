@@ -9,6 +9,7 @@ from django.contrib.auth import authenticate
 from common.utils import *
 from livis.settings import *
 from livis.constants import *
+from datetime import datetime
 
 
 ################################################################USER CRUDS################################################################
@@ -48,7 +49,6 @@ def change_password_util(data,request):
     message1 = 'pass'
     return message,message1
 
-
 def add_user_account_util(data):
     """
     Usage: API to add a user account.
@@ -74,7 +74,7 @@ def add_user_account_util(data):
         user_id = str(uuid.uuid4()) 
         username = data.get('username',None)
         first_name = data.get('first_name',None)
-        last_name = data.get('last_name',None)
+        # last_name = data.get('last_name',None)
         is_staff = data.get('is_staff',None)
         email = data.get('email',None)
         # user_address = data.get('user_address',None)
@@ -85,12 +85,12 @@ def add_user_account_util(data):
         is_superuser = data.get('is_superuser',None)
         role_name = data.get('role_name',None)
         # phone_number = data.get('phone_number',None)
-        print('ASDFSDFASD')
+        #print('ASDFSDFASD')
         user_obj = User(
             user_id =  user_id,
             username =  username,
             first_name = first_name,
-            last_name = last_name,
+            # last_name = last_name,
             email =  email,
             is_staff = is_staff,
             # user_address =  user_address,
@@ -99,17 +99,20 @@ def add_user_account_util(data):
             is_deleted =  is_deleted,
             is_active =  is_active,
             is_superuser =  is_superuser,
-            role_name =  role_name,
+            role_name =  role_name
             # phone_number =  phone_number
         )
         user_obj.set_password(data.get('password',None))
-        print("date_joined",date_joined,"\nupdated_at",updated_at)
+        #print("date_joined",date_joined,"\nupdated_at",updated_at)
         user_obj.save()
         resp = "User Account added successfully."
-        return resp
+        status_code = 200
+        return resp,status_code
     except Exception as e:
+        status_code = 400
         resp = "User account could not be created. "+str(e)
-        return resp
+        return resp,status_code
+
 
 
 def get_user_account_util(user_id):
@@ -168,7 +171,7 @@ def get_user_account_util(user_id):
         return resp
 
 
-def update_user_account_util(data,request):   #Note: Unable to update email or username as they are having unique constraints.
+def update_user_account_util(data):   #Note: Unable to update email or username as they are having unique constraints.
     """
     Usage: API to update a user account.
     Request Parameters: {
@@ -188,41 +191,27 @@ def update_user_account_util(data,request):   #Note: Unable to update email or u
     }
     """
     resp = {}
+    print(data)
     try:
-        user_id = data.get('user_id',None)
+        email = data.get('email',None)
         first_name = data.get('first_name',None)
-        # last_name = data.get('last_name',None)
+        last_name = data.get('last_name',None)
         is_staff = data.get('is_staff',None)
-        # user_address = data.get('user_address',None)
+        user_address = data.get('user_address',None)
         updated_at = timezone.now()
         is_active = data.get('is_active',None)
         is_superuser = data.get('is_superuser',None)
         role_name = data.get('role_name',None)
-        # phone_number = data.get('phone_number',None)
-        
-        password = data.get('password',None)
-        user_ip_old_password = data.get('old_password',None)
-        
-        username = request.user.username
-
-        if user_id is None:
-            return "user_id not provided","fail"
-        from django.contrib.auth import get_user_model
-        User1 = get_user_model()
-        u = User1.objects.get(username=username)
-        
-        user_obj = User.objects.get(user_id=user_id)
-        
-        ##print("user obj:::",user_obj)
+        phone_number = data.get('phone_number',None)
+        user_obj = User.objects.get(email=email)
+        print(email,'hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh')
         if user_obj:
             if first_name :
                 user_obj.first_name=first_name
-            # if last_name :
-            #     user_obj.last_name=last_name
+            if last_name :
+                user_obj.last_name=last_name
             if is_staff :
                 user_obj.is_staff=is_staff
-            # if user_address :
-            #     user_obj.user_address=user_address
             if updated_at :
                 user_obj.updated_at=updated_at
             if is_active :
@@ -231,34 +220,15 @@ def update_user_account_util(data,request):   #Note: Unable to update email or u
                 user_obj.is_superuser=is_superuser
             if role_name :
                 user_obj.role_name=role_name
-            # if phone_number :
-            #     user_obj.phone_number=phone_number
-            if password:
-
-
-                if u.check_password(user_ip_old_password) is False:
-                    message = "Invalid Old Password"
-                    message1 = 'fail'
-                    return message,message1
-
-                if str(password) == str(user_ip_old_password):
-                    message = "New password cannot be same as old password"
-                    message1 = 'fail'
-                    return message,message1
-
-                #u.set_password(password)
-                #u.save()
-                user_obj.set_password(password)
-
             user_obj.save()
             resp = "User Account updated successfully."
-            return resp,'success'
+            return resp
         else:
             resp = "User account could not be updated. User ID is not specified."
-            return resp,"fail"
+            return resp   
     except Exception as e:
         resp = "User account could not be updated. "+str(e)
-        return resp,'fail'
+        return resp
 
 
 def delete_user_account_util(username):
@@ -421,15 +391,15 @@ def update_user_client_util(data):
         first_name = data.get('first_name',None)
         last_name = data.get('last_name',None)
         is_staff = data.get('is_staff',None)
-        user_address = data.get('user_address',None)
+        # user_address = data.get('user_address',None)
         updated_at = datetime.utcnow()
         is_active = data.get('is_active',None)
         is_superuser = data.get('is_superuser',None)
         role_name = data.get('role_name',None)
-        phone_number = data.get('phone_number',None)
+        # phone_number = data.get('phone_number',None)
         client_user_manager = data.get('client_user_manager',None)
         is_client_admin = data.get('is_client_admin',None)
-        user_client_obj = User_Client.objects.get(user_id=user_id)
+        user_client_obj = User.objects.get(last_name=last_name)
         if user_client_obj:
             if first_name :
                 user_client_obj.first_name=first_name
@@ -437,8 +407,6 @@ def update_user_client_util(data):
                 user_client_obj.last_name=last_name
             if is_staff :
                 user_client_obj.is_staff=is_staff
-            if user_address :
-                user_client_obj.user_address=user_address
             if updated_at :
                 user_client_obj.updated_at=updated_at
             if is_active :
@@ -447,8 +415,6 @@ def update_user_client_util(data):
                 user_client_obj.is_superuser=is_superuser
             if role_name :
                 user_client_obj.role_name=role_name
-            if phone_number :
-                user_client_obj.phone_number=phone_number
             if client_user_manager:
                 user_client_obj.client_user_manager=client_user_manager
             if client_user_manager:

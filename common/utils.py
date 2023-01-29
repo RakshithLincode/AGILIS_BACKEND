@@ -28,7 +28,7 @@ if (os.getcwd().split('/')[-1]) == "livis":
     from livis.settings import REDIS_CLIENT_HOST
     from livis.settings import REDIS_CLIENT_PORT
 else:
-    sys.path.insert(0,"D:/SE_PROJECT/livis-be-se-agilis_be/livis-be-se-agilis_be/livis/")
+    sys.path.insert(0,"D:/SE_PROJECT/livis-be-se-agilis_be/livis-be-se-agilis_be/AGILIS_BACKEND/livis/")
     from settings import PARTS_COLLECTION
     from settings import JIG_COLLECTION
     from settings import REDIS_CLIENT_HOST

@@ -73,7 +73,7 @@ def get_user_account(request,client_id):
 def update_user_account(request):
     data = json.loads(request.body)
     from accounts.utils import update_user_account_util
-    message = update_user_account_util(data,request)
+    message = update_user_account_util(data)
     return HttpResponse(json.dumps({'message' : message}), content_type="application/json")
 
 

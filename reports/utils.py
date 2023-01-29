@@ -13,7 +13,9 @@ import datetime
 from datetime import date
 import calendar
 from csv import DictWriter
-
+from datetime import datetime, timedelta
+from dateutil.relativedelta import *
+from datetime import date
 
 
 
@@ -57,13 +59,19 @@ def detail_report_util(data):
     query_2 = []
     resp = {}
     resp_list = []
+
+
     today = date.today()
+    day = today.strftime("%d")
     month = today.strftime("%m")
     year = today.strftime("20%y")
-    end_date = calendar.monthrange(int(year), int(month))
-    end_date  = str(end_date[1])
-    start = datetime.date(int(year), int(month), 1)
-    end = datetime.date(int(year), int(month), int(end_date))
+    start = (int(year), int(month), int(day))
+    end = today + relativedelta(months=-3)
+    day = end.strftime("%d")
+    month = end.strftime("%m")
+    year = end.strftime("20%y")
+    end = (int(year), int(month), int(day))
+
     # start = datetime.date(2021, 12, 23)
     # print(start)
     # end = datetime.date(2021, 12, 23)
@@ -71,7 +79,7 @@ def detail_report_util(data):
     
     if (from_date is not None) :
         query_1.append({'createdAt': {"$gte":from_date}})#,"$lte":to_date
-    elif (from_date is None ) :
+    elif (from_date is None) :
         query_1.append({'createdAt': {"$gte":str(start)}})#,"$lte":to_date
     if (to_date is not None) :
         query_1.append({'completedAt': {"$lte":to_date}})
@@ -177,7 +185,7 @@ def get_name_byid(id):
     
 
 def operator_list():
-    conn = sqlite3.connect('D:/SE_PROJECT/livis-be-se-agilis_be/livis-be-se-agilis_be/db.sqlite3')
+    conn = sqlite3.connect('db.sqlite3')
     cursor = conn.cursor()
 #     cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
     cursor.execute("SELECT * FROM accounts_user")
