@@ -2,7 +2,7 @@ import cv2
 import redis
 import json
 from utils import RedisKeyBuilderServer,CacheHelper,MongoHelper
-# import camera_module
+import camera_module
 import sys
 sys.path.insert(1, 'D:/SE_PROJECT/livis-be/livis/livis/')
 from settings import REDIS_CLIENT_HOST
@@ -41,19 +41,19 @@ rch = CacheHelper()
 baumer_ip = config_file1()
 # cam_1 = camera_module.camera('baumer',baumer_ip[0])
 # cam_2 = camera_module.camera('baumer',baumer_ip[1])
-# cam_1 = camera_module.Lucid('221501115','top')
-# cam_2 = camera_module.Lucid('221501115','bottom')
+cam_1 = camera_module.Lucid('222500178','left')
+cam_2 = camera_module.Lucid('222500178','right')
 
 while True:
     try:
         s = time.time()
-        # frame_1 = cam_1.fetch_cameras()
-        camera_1 = cv2.imread('img28.jpg')
+        camera_1 = cam_1.fetch_cameras()
+        # camera_1 = cv2.imread('img28.jpg')
         if camera_1 is None:
             print("Baumer_camera_1 is not connected to device")
         # frame_1 = imutils.rotate(frame_1,180)
-        # frame_2 = cam_2.fetch_cameras()
-        camera_2 = cv2.imread('img32.jpg')
+        camera_2 = cam_2.fetch_cameras()
+        # camera_2 = cv2.imread('img32.jpg')
         if camera_2 is None:
             print("Baumer_camera_2 is not connected to device")    
         # frame_2 = imutils.rotate(frame_2,180)

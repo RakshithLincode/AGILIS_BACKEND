@@ -39,10 +39,9 @@ def list_specific_jig(jig_type):
    
     for i in p:
        
-        if i['jig_type'] == jig_type:
+        if i['jig_type'] == jig_type and not i['is_deleted'] == True:
             new_list.append(i)
     return new_list,200
-
 
 
 def fetch_individual_component_list_util(data):

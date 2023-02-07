@@ -18,14 +18,21 @@ import imutils
 import random
 from django.conf import settings
 from accounts.utils import get_user_account_util
-import tensorflow as tf
 #from livis.Monk_Object_Detection.tf_obj_2.lib.models.research.object_detection.webcam import load_model_to_memory,crop_infer
 from livis.models.research.object_detection.utils import label_map_util
-
+import os
+# %matplotlib inline
+import cv2
+import pandas as pd
+from pymongo import MongoClient
+from livis import settings as s
+from iteration_utilities import unique_everseen
+import concurrent.futures
+import urllib.request
+import ast
 from livis.celeryy import app
 from celery import shared_task
 #from livis.common_model import detection_graphm,detection_graphx,sessm,sessx,accuracy_thresholdm,accuracy_thresholdx,category_indexm,category_indexx
-
 import datetime
 import base64
 import numpy as np
@@ -172,9 +179,11 @@ def start_inspection(data):
     feed_urls = []
     workstation_info = RedisKeyBuilderServer(workstation_id).workstation_info
     #print(workstation_info)
-    for camera_info in workstation_info['camera_config']['cameras']:
+    cam=workstation_info['camera_config']
+    #print(cam)
+    for camera_info in cam['cameras']:
         url = "http://127.0.0.1:8000/livis/v1/preprocess/stream/{}/{}/".format(workstation_id,camera_info['camera_id'])
-        # url = "http://0.0.0.0:8000/livis/v1/toyoda/stream1/{}/{}/".format(workstation_id,camera_info['camera_id'])
+
         #feed_urls[camera_info['camera_name']] = url
         feed_urls.append(url)
 
@@ -232,12 +241,11 @@ def start_inspection(data):
 
     user_details = get_user_account_util(user_id)
     #print("user_details::::",user_details)
-    # role_name = user_details['role_name']
-    # print("role_name::::cccccccccccccccccccccccccccccccccccccccccccccccccc",user_details['role_name'])
+    role_name = user_details['role_name']
+    #print("role_name::::",role_name,type(role_name))
     user = { "user_id": user_id,
-                "role": 'operator',
-                "name": ('operatorsecond')
-                # "name": (user_details['first_name']+" "+user_details['last_name'])
+                "role": user_details['role_name'],
+                "name": (user_details['first_name']+" "+user_details['last_name'])
             }
     #print("user:::: ",user)
     createdAt = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -261,7 +269,7 @@ def start_inspection(data):
         "status" : 'started',
         'createdAt' : createdAt,
         'is_manual_pass' : False,
-        'is_reject':True,
+        'is_reject':False,
         'is_compleated' : False,
         'serial_no' : barcode_id,
         'is_admin_report_reset':False,
@@ -281,27 +289,11 @@ def start_inspection(data):
     else:
         return {}
 
-
-
-
 @shared_task
 def start_real_inspection(data1,inspection_id):
 
     frame = None
     crp = None
-
-    #goto workstation and fetch redis keys and camera_name
-    #goto jig and pull regions
-    #load ssd to memory
-    #combine the regions with camera_name
-    #iterate through keys,camera_name
-        
-        #iterate through regions
-            #crop send - get back the inference
-    
-
-
-    ############# worstation red key and cam name
 
     mp = MongoHelper().getCollection(WORKSTATION_COLLECTION)
 
@@ -318,40 +310,13 @@ def start_real_inspection(data1,inspection_id):
     key_list = []
 
     for cam in data['camera_config']['cameras']:
+        camera_index = cam['camera_id']
+        camera_name = cam['camera_name']
         key = RedisKeyBuilderServer(workstation_id).get_key(cam['camera_id'],'original-frame') 
         cam_list.append(cam['camera_name'])
         key_list.append(key)
 
     ########### jig details 
-
-    try:
-        mp = MongoHelper().getCollection('WEIGHTS')
-    except Exception as e:
-        message = "Cannot connect to db"
-        status_code = 500
-        return message,status_code
-
-    s = [p for p in mp.find()]
-
-    s=s[0]
-
-    # gvm_labelmap_pth = s['gvm_labelmap_pth']
-    # gvx_labelmap_pth = s['gvx_labelmap_pth']
-    # gvm_num_classes = s['gvm_num_classes']
-    # gvx_num_classes = s['gvx_num_classes']
-    # gvm_saved_model_pth = s['gvm_saved_model_pth']
-    # gvx_saved_model_pth = s['gvx_saved_model_pth']
-
-    # all_labelmap_pth = s['all_labelmap_pth']
-    # all_num_classes = s['all_num_classes']
-    # all_saved_model_pth = s['all_saved_model_pth']
-
-    # black_labelmap_pth = s['black_line_labelmap_pth']
-    # #black_num_classes = s['black_line_num_classes']
-    # black_saved_model_pth = s['black_line_saved_model_pth']
-
-
-
     try:
         mp = MongoHelper().getCollection(JIG_COLLECTION)
     except Exception as e:
@@ -377,14 +342,11 @@ def start_real_inspection(data1,inspection_id):
         status_code = 400
         return message,status_code
     
-
+    
     oem_number = dataset['oem_number']
     jig_type = dataset['jig_type']
     vendor_match = dataset['vendor_match']
     copy_of_vendor_match = vendor_match
-    #print("vendor match is")
-    #print(vendor_match)
-
 
     try:
         kanban = dataset['kanban']
@@ -400,216 +362,6 @@ def start_real_inspection(data1,inspection_id):
         return message,status_code
 
 
-    try:
-        #var = str(ObjectId(dataset['_id'])) + "_full_img"
-        #full_img = rch.get_json(var)
-        #print(full_img)
-        from os import path
-        import json 
-        full_img = None
-        #print("999999999999")
-        #print(path.exists('/critical_data/regions/'+str(ObjectId(dataset['_id'])) + "_full_img"+".json"))
-        if path.exists('/critical_data/regions/'+str(ObjectId(dataset['_id'])) + "_full_img"+".json"):
-            f = open ('/critical_data/regions/'+str(ObjectId(dataset['_id'])) + "_full_img"+".json", "r")
-            a = json.loads(f.read())
-            full_img = a['full_img']
-            #print("GOTTTTTTTTTTTTTTTTTTT")
-            f.close()
-        else:
-            full_img = None
-            
-    except:
-        message = "error in full_img/regions not set"
-        status_code = 400
-        return message,status_code
-    
-    if full_img is None:
-        message = "error in full_img/regions not set"
-        status_code = 400
-        return message,status_code
-
-    def send_crop_pred(j,next_region,width,height,frame,port):
-
-        x_1 = float(j["x"])
-        y_1 = float(j["y"])
-        w_1 = float(j["w"])
-        h_1 = float(j["h"])
-
-        x0_1 = int(x_1 * width)
-        y0_1 = int(y_1 * height)
-        x1_1 = int(((x_1+w_1) * width))
-        y1_1 = int(((y_1+h_1) * height))
-
-        x_2 = float(next_region["x"])
-        y_2 = float(next_region["y"])
-        w_2 = float(next_region["w"])
-        h_2 = float(next_region["h"])
-
-        x0_2 = int(x_2 * width)
-        y0_2 = int(y_2 * height)
-        x1_2 = int(((x_2+w_2) * width))
-        y1_2 = int(((y_2+h_2) * height))
-
-        mid_crp = frame[y0_1:y1_1 , x1_1:x0_2].copy()
-        #print("midcrop shape is")
-        #print(mid_crp.shape)
-        import uuid
-        def resize_crop_pred(img):
-            #scale_percent = 40 # percent of original size
-            width = 720
-            height = 1280
-            dim = (width, height) 
-            resized = cv2.resize(img, dim, interpolation = cv2.INTER_CUBIC) 
-            return resized
-            
-        f_name = "/home/schneider/Music/tp/" + str(uuid.uuid4()) + ".jpg"
-        mid_crp = resize_crop_pred(mid_crp)
-        #cv2.imwrite(f_name,mid_crp)
-        
-
-
-        print("going into LINE PREDICTIONS")
-
-        ret = get_pred_tf_serving_flask_black(mid_crp,port)
-
-        return ret
-        #if len(objects) == 0:
-        #    #no predictions
-        #    return "no_line"
-        #else:
-        #    some predictions -- gotta be line, theres only one label
-        #    return "line"
-
-
-
-
-
-    def black_check(regions,rch,r_key,port,regiona,regionb,regionc,regiond):
-
-        frame  = rch.get_json(r_key)
-        height,width,c = frame.shape
-        
-        #print(regions)
-
-        pred1 = None
-        pred2 = None
-        pred3 = None
-
-        for j in regions:
-            print("reGIONSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS")
-            print(j["cls"])
-            print("regionabc")
-            print(regiona)
-            print(regionb)
-            print(regionc)
-            
-
-            if regiond is not None:
-
-                if j["cls"] == regiona:
-                    print("went in pred1 funct")
-                    pred1 = send_crop_pred(j,regions[1],width,height,frame,port)
-
-                elif j["cls"] == regionb:
-                    print("went in pred2 funct")
-                    pred2 = send_crop_pred(j,regions[2],width,height,frame,port)
-
-                elif j["cls"] == regionc:
-                    print("went in pred3 funct")
-                    pred3 = send_crop_pred(j,regions[3],width,height,frame,port)
-            else:
-                if j["cls"] == regiona:
-                    pred1 = send_crop_pred(j,regions[1],width,height,frame,port)
-
-                elif j["cls"] == regionb:
-                    pred2 = send_crop_pred(j,regions[2],width,height,frame,port)
-
-                #elif j["cls"] == regionc and j+1["cls"] == regiond:
-                #    pred3 = send_crop_pred(j,width,height,frame,port)
-
-        if regiond is not None:
-            return pred1,pred2,pred3
-        else:
-            return pred1,pred2
-        
-
-
-
-    def regions_crop_pred(regions,rch,r_key,final_dct,port):
-        global frame
-        global crp
-        t1 = time.time()
-        frame  = rch.get_json(r_key)
-        t2 = time.time()
-        #print('time taken to get frame from redis  ::  ::  ::  :: ---------    '+ str(t2-t1))
-
-        height,width,c = frame.shape
-        print(frame.shape)
-        #height = height*3
-        #width = width*3
-
-        def resize_crop(img):
-            scale_percent = 40 # percent of original size
-            width = int(img.shape[1] * scale_percent / 100)
-            height = int(img.shape[0] * scale_percent / 100)
-            dim = (width, height) 
-            resized = cv2.resize(img, dim, interpolation = cv2.INTER_LANCZOS64) 
-            return resized
-            
-        def resize_crop_pred(img):
-            #scale_percent = 40 # percent of original size
-            width = 720
-            height = 1280
-            dim = (width, height) 
-            resized = cv2.resize(img, dim, interpolation = cv2.INTER_CUBIC) 
-            return resized
-
-
-        for j in regions:
-            #print("checking regions : : : " , j)
-            x = float(j["x"])
-            y = float(j["y"])
-            w = float(j["w"])
-            h = float(j["h"])
-            #print(x,y,w,h)
-            x0 = int(x * width)
-            y0 = int(y * height)
-            x1 = int(((x+w) * width))
-            y1 = int(((y+h) * height))
-            #print(x0,y0,x1,y1)
-            label = j["cls"]
-            cords = [x0,y0,x1,y1]
-            import uuid
-            unique_id = str(uuid.uuid4())
-
-            #perform crop
-            t1 = time.time()
-            crp = frame[y0:y1,x0:x1].copy()
-            
-            import uuid
-        
-            f_name = "/home/schneider/Music/full/" + str(uuid.uuid4()) + ".jpg"
-            
-            crp = resize_crop_pred(crp)
-            #cv2.imwrite(f_name,crp)
-            t2 = time.time()
-            #print('time taken to get crop            ::  ::  ::  :: ---------    '+ str(t2-t1))
-            
-            
-            #cv2.imwrite('/critical_data/tmpcrops/'+unique_id+'.jpg',crp)
-            #print('/critical_data/tmpcrops/'+unique_id+'.jpg')
-
-            print("going into prediction")
-            print(crp.shape)
-            t1 = time.time()
-            predicted_obj = get_pred_tf_serving_flask(crp,port)
-            final_dct[label] = predicted_obj
-                
-        return final_dct
-
-
-
-
     #write a while true loop : if final dict match with kanban  or manual pass by admin using inspection_id
     t_start_inspection = time.time()
 
@@ -619,12 +371,10 @@ def start_real_inspection(data1,inspection_id):
         try:
             del cl_obj
         except Exception as e:
-            pass
-            #print("del ops")
-            #print(e)
+            print("del ops")
+            print(e)
+
     retry_list = []
-
-
 
 
     while(True):
@@ -638,12 +388,10 @@ def start_real_inspection(data1,inspection_id):
                 #print("i am paused")
                 continue
                 
-
-
-        #print("Testing here")
+        print("Testing here")
         try:
-            COLL_NAME = "INSPECTION_"+datetime.datetime.now().strftime("%m_%y")
-            mp = MongoHelper().getCollection(COLL_NAME)
+            COL_NAME = "INSPECTION_"+datetime.datetime.now().strftime("%m_%y")
+            mp = MongoHelper().getCollection(COL_NAME)
         except Exception as e:
             message = "Cannot connect to db"
             status_code = 500
@@ -673,616 +421,109 @@ def start_real_inspection(data1,inspection_id):
             print("part rejection is true")
             break
         
-
-        
         final_dct = {}
-        print(full_img)
-        #print(cam_list)
-        #print(key_list)
-
-                  
-        def get_pred_left_camera(p2_lst,jig_type):
-            for cam,r_key in zip(cam_list,key_list):
-                if cam == "left_camera":
-                    for f in full_img:
-                        if f['cam_name'] == 'left_camera':
-                            try:
-                                regions = f['regions']
-                                if regions != "":
-                                    print("inside left cam")
-                                    p2_lst = regions_crop_pred(regions,rch,r_key,p2_lst,5001)
-                                    if jig_type == "GVX":
-                                        p4,p5,p6 = black_check(regions,rch,r_key,5006,"region5","region6","region7","region8")
-                                        print("FUNCTION CALLED LEFT CAM")
-                                        var1 = str(inspection_id) + "_line4"
-                                        var2 = str(inspection_id) + "_line5"
-                                        var3 = str(inspection_id) + "_line6"
-                                        rch.set_json({var1:p4})
-                                        rch.set_json({var2:p5})
-                                        rch.set_json({var3:p6})
-
-                                    var = str(inspection_id) + "_cam2"
-                                    rch.set_json({var:p2_lst})
-                            except Exception as e:
-                                print("region not defined in left camera:" + str(e) )
-                                pass
-
-        def get_pred_right_camera(p4_lst,jig_type):
-            for cam,r_key in zip(cam_list,key_list):
-                if cam == "right_camera":
-                    for f in full_img:
-                        if f['cam_name'] == 'right_camera':
-                            try:
-                                regions = f['regions']
-                                if regions != "":
-                                    print("inside  right cam")
-
-                                    p4_lst = regions_crop_pred(regions,rch,r_key,p4_lst,5003)
-                                    if jig_type == "GVX":
-                                        p1,p2,p3 = black_check(regions,rch,r_key,5008,"region13","region14","region15","region16")
-                                        print("FUNCTION CALLED right CAM")
-                                        var1 = str(inspection_id) + "_line10"
-                                        var2 = str(inspection_id) + "_line11"
-                                        var3 = str(inspection_id) + "_line12"
-                                        rch.set_json({var1:p1})
-                                        rch.set_json({var2:p2})
-                                        rch.set_json({var3:p3})
-                                    var = str(inspection_id) + "_cam4"
-                                    rch.set_json({var:p4_lst})
-                            except Exception as e:
-                                print("region not defined in right camera:" + str(e) )
-                                pass  
-
-        t1 = time.time()
-        #check if something is running - if yes check what it is ? if selected and running match then pass else kill running and start selected
-
-
         
+        def parallel_process():
+            URLS = ['http://35.193.71.60:5000/predict',
+                    'http://35.193.71.60:5001/predict']
+            def load_url(url, timeout):
+                with urllib.request.urlopen(url, timeout=timeout) as conn:
+                    return conn.read()
+            value  = []
+            with concurrent.futures.ThreadPoolExecutor(4) as executor:
+                future_to_url = {executor.submit(load_url, url, 60): url for url in URLS}
+                for future in concurrent.futures.as_completed(future_to_url):
+                    url = future_to_url[future]
+                    data = future.result()
+                    value.append(data)
+                return value  
 
-        def launch_all_containers():
-            t1 = time.time()
-            
-            print("starting all flask supervisorssss")
-            cmd1 = "supervisorctl start flask_service_5001"
-            cmd3 = "supervisorctl start flask_service_5003"
-                    
-            cmd6 = "supervisorctl start flask_service_5006"
-            cmd8 = "supervisorctl start flask_service_5008"
+        def convert_value(value):
+            dict = {'prediction':[]}
+            final_dict = {}
+            prediction_1 = ast.literal_eval(value[0].decode('utf-8'))
+            prediction_2 =  ast.literal_eval(value[1].decode('utf-8'))
+            for i in prediction_2['prediction']:
+                dict['prediction'].append(i)
+            for i in prediction_1['prediction']:
+                dict['prediction'].append(i) 
+            list_dict = sorted(dict['prediction'], key=lambda d: d['position'])
+            final_dict['prediction'] = list_dict 
+            return final_dict  
 
-                    
-            subprocess.Popen(cmd1,shell=True).wait()
-            subprocess.Popen(cmd3,shell=True).wait()
-                    
-            subprocess.Popen(cmd6,shell=True).wait()
-            subprocess.Popen(cmd8,shell=True).wait()
-            print("all flask started...")
-        
-
-            print("all supervisors launched")
-            t2 = time.time()
-            print('all supervisor making it up and running time is            ::  ::  ::  :: ---------    '+ str(t2-t1))
-
-        #proc = subprocess.run(['docker','container','ls'],check=True,stdout=PIPE)
-        proc1 = subprocess.run(['supervisorctl','status','flask_service_5001'],stdout=PIPE)
-        proc3 = subprocess.run(['supervisorctl','status','flask_service_5003'],stdout=PIPE)
-        
-        proc6 = subprocess.run(['supervisorctl','status','flask_service_5006'],stdout=PIPE)
-        proc8 = subprocess.run(['supervisorctl','status','flask_service_5008'],stdout=PIPE)
-        
-        HAS_RUN = True
-        
-        
-        if 'RUNNING' in str(proc1):
-            pass
-        else:
-            HAS_RUN = False
-        
-    
-        
-        if 'RUNNING' in str(proc3):
-            pass
-        else:
-            HAS_RUN = False
-        
-            
-        if 'RUNNING' in str(proc6):
-            pass
-        else:
-            HAS_RUN = False
-            
-    
-        if 'RUNNING' in str(proc8):
-            pass
-        else:
-            HAS_RUN = False
-        
-        
-      
-
-        if HAS_RUN is True:
-            pass
-        else:
-            #no containers running # launch appropriate container
-            print("some supervisors are not running")
-            launch_all_containers()  
-
-
-        weights_folder1 = "/home/schneider/Music/pred_crops"
-        if not os.path.exists(weights_folder1):
-            os.makedirs(weights_folder1)
-        else:
-            shutil.rmtree(weights_folder1, ignore_errors=True)
-            os.makedirs(weights_folder1)
-
-        weights_folder1 = "/home/schneider/Music/pred_crops_black"
-        if not os.path.exists(weights_folder1):
-            os.makedirs(weights_folder1)
-        else:
-            shutil.rmtree(weights_folder1, ignore_errors=True)
-            os.makedirs(weights_folder1)
-            
-               
-        p1_lst = {}
-        p2_lst = {}
-        p3_lst = {}
-        p4_lst = {}
-        p5_lst = {}
-        
-        var = str(inspection_id) + "_cam1"
-        rch.set_json({var:p1_lst})
-        var = str(inspection_id) + "_cam2"
-        rch.set_json({var:p2_lst})
-        
-        P1 = Process(target=get_pred_left_camera,args=(p2_lst,jig_type,))
-        P2 = Process(target=get_pred_right_camera,args=(p4_lst,jig_type,))
-        
-        P1.start()
-        P2.start()
-        P1.join()
-        P2.join()
-       
-        
-        
-        t2 = time.time()
-        print('TIMEEEEEEEEEEEEEEEEEEEEEEEEEEE            ::  ::  ::  :: ---------    '+ str(t2-t1))
-        var = str(inspection_id) + "_prediction_time"
-        rch.set_json({var:int(t2-t1)})
-        
-        
-        
-        var = str(inspection_id) + "_cam1"
-        p1_lst = rch.get_json(var)
-        var = str(inspection_id) + "_cam2"
-        p2_lst = rch.get_json(var)
-
-        #line logic -- 
-
-        if jig_type == "GVX":
-
-            lst = []
-            HAS_LINE = None
-
-            var1 = str(inspection_id) + "_line1"
-            res1 = rch.get_json(var1)
-            lst.append(res1)
-            var1 = str(inspection_id) + "_line2"
-            res2 = rch.get_json(var1)
-            lst.append(res2)
-            var1 = str(inspection_id) + "_line3"
-            res3 = rch.get_json(var1)
-            lst.append(res3)
-            var1 = str(inspection_id) + "_line4"
-            res4 = rch.get_json(var1)
-            lst.append(res4)
-            var1 = str(inspection_id) + "_line5"
-            res5 = rch.get_json(var1)
-            lst.append(res5)
-            var1 = str(inspection_id) + "_line6"
-            res6 = rch.get_json(var1)
-            lst.append(res6)
-            var1 = str(inspection_id) + "_line7"
-            res7 = rch.get_json(var1)
-            lst.append(res7)
-            var1 = str(inspection_id) + "_line8"
-            res8 = rch.get_json(var1)
-            lst.append(res8)
-            var1 = str(inspection_id) + "_line9"
-            res9 = rch.get_json(var1)
-            lst.append(res9)
-            var1 = str(inspection_id) + "_line10"
-            res10 = rch.get_json(var1)
-            lst.append(res10)
-            var1 = str(inspection_id) + "_line11"
-            res11 = rch.get_json(var1)
-            lst.append(res11)
-            var1 = str(inspection_id) + "_line12"
-            res12 = rch.get_json(var1)
-            lst.append(res12)
-            var1 = str(inspection_id) + "_line13"
-            res13 = rch.get_json(var1)
-            lst.append(res13)
-            var1 = str(inspection_id) + "_line14"
-            res14 = rch.get_json(var1)
-            lst.append(res14)
-
-            freq_black = {} 
-            for item in lst: 
-                if (item in freq_black): 
-                    freq_black[item] += 1
-                else: 
-                    freq_black[item] = 1
-
-            print("freq_balc")
-            print(freq_black)
-            try:
-                line_f = freq_black['line']
-            except:
-                line_f = 0
-            try:
-                no_line_f = freq_black['no_line']
-            except:
-                no_line_f = 0
-
-            if line_f > no_line_f:
-                print("line found")
-                #has line
-                HAS_LINE = True
-
-            elif line_f < no_line_f:
-                print("NO line found")
-                #no line
-                HAS_LINE = False
-
-            elif line_f == no_line_f:
-                #confusion -- make
-                print("HAVINGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG CONFUSION ON LINEEEEEEEEEEEEEEEEE PREDICTIONNNNNNNNNNNNNNNNNNNNNNNNNNNNNN")
-                HAS_LINE = True #false predict 
-
-            
-        
-        #print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
-        #print(p1_lst)
-        #print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
-        final_dct = {}
-        final_dct.update(p1_lst)
-        final_dct.update(p2_lst)
-        final_dct.update(p3_lst)
-        final_dct.update(p4_lst)
-        final_dct.update(p5_lst)
-        
-        #weights_folder1 = "/home/schneider/Music/pred_crops"
-        #if not os.path.exists(weights_folder1):
-        #    os.makedirs(weights_folder1)
-        #else:
-        #    shutil.rmtree(weights_folder1, ignore_errors=True)
-        #    os.makedirs(weights_folder1)
-
-
-        #write black line det logic here
-
-	
-        
-
-        t1 = time.time()
-        # compare the final_dct with the actual kanban if all match break else continue  (keep updating the inspection_id key of redis with matched values)
-        
-        region_pass_fail = []
-
-
-        def populate_results(pos,k,value):
-            
-            if k['part_type'] == 'IGBT':
-
-                # if no predictions on region (either he kept part which isnt trained or network hasn't learnt that part well or he hasn't kept anythin at all) if no detections -yellow
-                if value is None:
-                    region_pass_fail.append( {"position":k['position'],"part_number":k['part_number'],"status":False,"result_part_number":None,"color":"yellow"} )
+        def find_empty_value(dict):
+            result_prediction = {'prediction':[]}
+            for i in dict['prediction']:
+                if '' in i['part_number']:
+                    pass
                 else:
-                    #if there is a prediction (it can be right or wrong prediction) - 
-                    #HAS_PART = True
-                    for part in k['part_number']:
-                        if str(value) in part: #if model gave right prediction and right part is placed in location - green
-                            HAS = False
-                            indexx = 0
-                            for indivi in region_pass_fail:
-                                #print("************************************************************")
-                                #print(str(indivi["position"]))
-                                #print("\n")
-                                #print(str(k['position']))
-                                #print('\n')
-                                #print(str(indivi["position"]) == str(k['position']))
-                                #print("************************************************************")
-                                if str(indivi["position"]) == str(k['position']):
-                                    HAS = True
-                                    break
-                                indexx = indexx+1
-                            if HAS is True:
-                                region_pass_fail[indexx] = {"position":k['position'],"part_number":k['part_number'],"status":True,"result_part_number":str(value),"color":"green"}
-                                break
-                            else:
-                                region_pass_fail.append( {"position":k['position'],"part_number":k['part_number'],"status":True,"result_part_number":str(value),"color":"green"} )
-                                break
-                        else: #if it cant find in array (operator placed wrong trained part in wrong position or our model gave false prediction) - red
-                            #check if already exist - if pos exist in region_pass_fail then dont append else append
-                            HAS = False
-                            for indivi in region_pass_fail:
-                                #print("************************************************************")
-                                #print(str(indivi["position"]))
-                                #print("\n")
-                                #print(str(k['position']))
-                                #print('\n')
-                                #print(str(indivi["position"]) == str(k['position']))
-                                #print("************************************************************")
-                                if str(indivi["position"]) == str(k['position']):
-                                    HAS = True
-                                    break
-                            if HAS is True:
-                                pass
-                            else:
-                                region_pass_fail.append( {"position":k['position'],"part_number":k['part_number'],"status":False,"result_part_number":str(value),"color":"red"} )
+                    result_prediction['prediction'].append({"part_number":i['part_number'],"position":i['position']})
+            return result_prediction
+                
+        def get_kanban(oem_number):
+            mp = MongoHelper().getCollection("jig")
+            for x in mp.find():
+                if x['oem_number'] == oem_number:
+                    kanban = x.get('kanban')	
+                    return kanban
 
-            elif k['part_type'] == 'THERMOSTAT':
-                #thermostat logic
-
-                # if no predictions on region (either he kept part which isnt trained or network hasn't learnt that part well or he hasn't kept anythin at all) if no detections
-                if value is None: #yellow
-                    region_pass_fail.append( {"position":k['position'],"part_number":k['part_number'],"status":False,"result_part_number":None,"color":"yellow"} )
+        def check_kanban(actual_value,predicted_value):
+            position = {'position_present':[],'position_absent':[]}
+            position_actual = []
+            position_predict = []
+            isAccepted  = []
+            status = []
+            for actual,predicted in zip(actual_value,predicted_value):
+                if actual['part_number'] == predicted['part_number']:
+                    position['position_present'].append(actual['position'])
+                    isAccepted.append(True)  
                 else:
-                    #if there is a prediction (it can be right or wrong prediction) - 
-                    if value == "thermostat":#if model gave right prediction and right part is placed in location - green
-                        region_pass_fail.append( {"position":k['position'],"part_number":k['part_number'],"status":True,"result_part_number":str(value),"color":"green"} )
-
-                    else: #if it cant find in array (operator placed wrong trained part in wrong position or our model gave false prediction) - red 
-                        region_pass_fail.append( {"position":k['position'],"part_number":k['part_number'],"status":False,"result_part_number":str(value),"color":"red"} )
+                    position['position_absent'].append(actual['position'])
+                    isAccepted.append(False)  
+            for value in actual_value:
+                position_actual.append(value['position'])
+            for value in predicted_value:
+                position_predict.append(value['position']) 
+            for i in position_actual:
+                if i in position_predict:
+                    pass
+                else:
+                    position['position_absent'].append(i)
+                    isAccepted.append(False)  
+            if False in isAccepted:
+                position['status'] = False
             else:
-                region_pass_fail.append( {"position":k['position'],"part_number":k['part_number'],"status":False,"result_part_number":None,"color":"yellow"} )
-        pos_counter = {}
-        print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
-        print(final_dct)
-        print(region_pass_fail)
-        print("###############################")
-        for k in kanban:
-         # for each prediction  final_dct = {"region1":"None","region2":"k75t60"}
-            #print(key, value)
-             # for each actual value
-            #    print("kanban_key", k)
-            for key,value in final_dct.items():
-                #print(k['position'],key, value)
-                pos_key = int(key.replace('region',''))
-                if k['position'] == pos_key:
-                    populate_results(key,k,value)
-                    pos_counter[k['position']] = key
-                #if k['position'] == 1 and key == "region1":
-                #    populate_results(key,k,value)
-                #elif k['position'] == 2 and key == "region2":
-                #    populate_results(key,k,value)
-                #elif k['position'] == 3 and key == "region3":
-                #    populate_results(key,k,value)
-                #elif k['position'] == 4 and key == "region4":
-                #    populate_results(key,k,value)
-                #elif k['position'] == 5 and key == "region5":
-                #    populate_results(key,k,value)
-                #elif k['position'] == 6 and key == "region6":
-                #    populate_results(key,k,value)
-                #elif k['position'] == 7 and key == "region7":
-                #    populate_results(key,k,value)
-                #elif k['position'] == 8 and key == "region8":
-                #    populate_results(key,k,value)
-                #elif k['position'] == 9 and key == "region9":
-                #    populate_results(key,k,value)
-                #elif k['position'] == 10 and key == "region10":
-                #    populate_results(key,k,value)
-                #elif k['position'] == 11 and key == "region11":
-                #    populate_results(key,k,value)
-                #elif k['position'] == 12 and key == "region12":
-                #    populate_results(key,k,value)
-                #elif k['position'] == 13 and key == "region13":
-                #    populate_results(key,k,value)
-                #elif k['position'] == 14 and key == "region14":
-                #    populate_results(key,k,value)
-                #elif k['position'] == 15 and key == "region15":
-                #    populate_results(key,k,value)
-                #elif k['position'] == 16 and key == "region16":
-                #    populate_results(key,k,value)
-                #elif k['position'] == 17 and key == "region17":
-                #    populate_results(key,k,value)
-                #elif k['position'] == 18 and key == "region18":
-                #    populate_results(key,k,value)
-                #elif k['position'] == 19 and key == "region19":
-                #    populate_results(key,k,value)
-                #elif k['position'] == 20 and key == "region20":
-                #    populate_results(key,k,value)
+                position['status'] = True
+            return  position , isAccepted 
+
+        def find_region_pass_fail(predicted_value,each_value_status,actual_value):
+            for i,j,k in zip(predicted_value,each_value_status,actual_value):
+                i['result_part_number'] = i['part_number']
+                del i["part_number"]
+                i['status']=j
+                if j == 'Accepted':
+                    i['color']='green'
                 else:
-                    pass
-        for k in kanban:
-            if k['position'] not in pos_counter:
-                populate_results('region'+str(k['position']),k,None)
-
-        #print(region_pass_fail)
-        region_pass_fail = sorted(region_pass_fail, key = lambda i: i['position'])
-        
-        
-        #print(pos_counter)
-        #vendor match  - correct the vendors --- [[1,2,5],[3,4],[7,8,9],[10,11,12]] convert to [[p100,p100,p100],[abcd,abcd],[123,123,123],[l,l,l]]
-        """
-        tmp_vendor = []
-        for vendd in vendor_match:
-            k = vendd.replace(",","")
-            k = int(k)
-            tmp_vendor.append([k])
-
-        last = []
-        first = []
-        for i in tmp_vendor:
-            o = 0
-            while(o<len(str(i))):
-                last.append(int(str(i)[o]))
-                o=o+1
-            first.append(last)
-            last = []
-
-        vendor_match = []
-        vendor_match = first.copy()
-        """
-        e = []
-        f=[]
-        vendor_match = copy_of_vendor_match
-        print(vendor_match)
-        for v in vendor_match:
-            #v = str(v)
-            for h in v.split(','):
-                e.append(int(h))
-            f.append(e)
-            e  = []
-                
-
-        vendor_match = f.copy()
-        value_region_acc_to_vendors = []
-        sub_list = []
-        for pos_list in vendor_match:                     
-            for pos in pos_list:
-                for region_pf in region_pass_fail:
-                    if region_pf['status'] == True: #if it passed above checks
-
-                        if region_pf['position'] == pos :
-                            sub_list.append(str(region_pf['result_part_number']))
-
-            value_region_acc_to_vendors.append(sub_list)
-            sub_list = []
+                    i['color']='red'
+                i['part_number'] =  k['part_number'] 
+            return predicted_value 
 
         
-        IS_EVEN = True
-
-        if len(value_region_acc_to_vendors) == len(vendor_match):
-            i = 0
-            while( i<len(value_region_acc_to_vendors)-1 ):
-
-                if len(vendor_match[i]) == len(value_region_acc_to_vendors[i]):
-                    pass 
-                else:
-                    IS_EVEN = False
-
-                i=i+1
-         
-        print(value_region_acc_to_vendors)
-        print("\n")
-        print(vendor_match)
-        print("ISEVEN IS ")
-        print(IS_EVEN)
-
-        if IS_EVEN:
-
-            def chkList(lst): 
-                res = False
-                if len(lst) < 0 : 
-                    res = True
-                res = all(ele == lst[0] for ele in lst) 
-                
-                if(res): 
-                    return True
-                else: 
-                    return False
-
-
-            print("entering check...")
-            for ven,vendor_m in zip(value_region_acc_to_vendors,vendor_match):
-            
-                is_match = chkList(ven)
-
-                if is_match:
-                    #all are green
-                    print("all vendors are same - pass")
-                    pass
-
-
-                if is_match is False:
-                    print("all vendors are not same - fail")
-                    
-                    #check if all are unique (all igbt are different - make all red)
-                    print(ven)
-                    print(len(set(ven)))
-                    print(len(ven))
-                    if(len(set(ven)) == len(ven)):
-                        print("all vendors are unique all fail")
-                        #all are unique 
-                        for positions in vendor_m:
-
-                            for r_p_f in region_pass_fail:
-
-                                if r_p_f['position'] == positions:
-
-                                    #make red in index of that
-                                    idx = region_pass_fail.index(r_p_f)
-                                    region_pass_fail[idx] = {"position":r_p_f['position'],"part_number":r_p_f['part_number'],"status":False,"result_part_number":r_p_f['result_part_number'],"color":"red","message":"vendor match failed"}
-                    else:
-                        print("some are same and some are diff")
-                        #some are same some are different
-                        #append to dict
-                        freq = {}
-
-                        for item in ven: 
-                            if (item in freq): 
-                                freq[item] += 1
-                            else: 
-                                freq[item] = 1
-                        print("frquency wihout sorting")
-                        print(freq)
-
-                        #check if sets are same - if yes retain one set and make other sets as red 
-                        set_value = []
-
-                        for key,value in freq.items():
-                            set_value.append(value)
-
-                        is_matched = chkList(set_value)
-                        print("setvalue is")
-                        print(set_value)
-                        if is_matched:
-                            print("sets are of same freq")
-                            # sets are of same frequency --  retain one set and make other sets as red
-                            
-                            for key,value in freq.items():
-                                first_key = str(key)
-                                break
-
-                            for positions,pred_val in zip(vendor_m,ven):
-
-                                for r_p_f in region_pass_fail:
-
-                                    if r_p_f['position'] == positions and str(pred_val) != first_key:
-
-                                        #make red in index of that
-                                        idx = region_pass_fail.index(r_p_f)
-                                        region_pass_fail[idx] = {"position":r_p_f['position'],"part_number":r_p_f['part_number'],"status":False,"result_part_number":r_p_f['result_part_number'],"color":"red","message":"vendor match failed"}
-
-                        else:
-                            print("sets are of different freq")
-                            #sets are not same - find greatest set using sort - keep that as green and make other sets as red
-                            sorted_freq = {k: v for k, v in sorted(freq.items(), key=lambda item: item[1])}
-                            print("sorted freq issssss")
-                            print(sorted_freq)
-                            for key,value in sorted_freq.items():
-                                first_key = str(key)
-                                
-                            print("first key is ")
-                            print(first_key)
-                            
-                            for positions,pred_val in zip(vendor_m,ven):
-
-                                for r_p_f in region_pass_fail :
-                                    
-                                    if r_p_f['position'] == positions and str(pred_val) != first_key:
-                                    
-                                        idx = region_pass_fail.index(r_p_f)
-                                        region_pass_fail[idx] = {"position":r_p_f['position'],"part_number":r_p_f['part_number'],"status":False,"result_part_number":r_p_f['result_part_number'],"color":"red","message":"vendor match failed"}
-
-            
-
-            t2 = time.time()
-            #print('time taken to execute comparision logic....            ::  ::  ::  :: ---------    '+ str(t2-t1))
-
-
-      
-        if jig_type == "LOADSTAR":
+        final_dct = {}
+        print(oem_number,'hjoemmmmmmmmmmmmmmmmmmmmmmmmm')
+        actual_value = get_kanban(str(oem_number))
+        print(actual_value,'kkkkkkkkkkkkkkkkkkkkkkkkkkkkkk')
+        predict_ocr_value = parallel_process()
+        result_dict = convert_value(predict_ocr_value)
+        result_prediction = find_empty_value(result_dict)
+        predicted_value = list(unique_everseen(result_prediction['prediction'])) 
+        position,each_value_status  = check_kanban(actual_value,predicted_value)
+        region_pass_fail = find_region_pass_fail(predicted_value,each_value_status,actual_value)
+        print(region_pass_fail,'jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj')
+        print(position)
+        t2 = time.time()
+        HAS_LINE = True #false predict 
+        if jig_type == "GVX":
             if HAS_LINE:
                 var = str(inspection_id) + "_hasline"
                 rch.set_json({var:True})
@@ -1308,8 +549,8 @@ def start_real_inspection(data1,inspection_id):
                 pass
             else:
                 IS_PROCESS_END = False
-
-        if IS_PROCESS_END:
+        print(IS_PROCESS_END,'isprocesssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss')
+        if IS_PROCESS_END is True:
             break
 
         retry_list.append(region_pass_fail)
@@ -1330,9 +571,7 @@ def start_real_inspection(data1,inspection_id):
             except:
                 return "error setting redis",400
 
-
-
-        
+            
         try: do_del(mp)
         except: pass
         try: do_del(message)
@@ -1351,63 +590,18 @@ def start_real_inspection(data1,inspection_id):
         except: pass
         try: do_del(e)
         except: pass
-        try: do_del(f)
-        except: pass
         try: do_del(final_dct)
-        except: pass
-        try: do_del(p1_lst)
-        except: pass   
-        try: do_del(p2_lst)
-        except: pass
-        try: do_del(p3_lst)
-        except: pass
-        try: do_del(p4_lst)
-        except: pass
-        try: do_del(p5_lst)
-        except: pass
-        try: do_del(pos_counter)
-        except: pass
-        try: do_del(t1)
-        except: pass
-        try: do_del(t2)
-        except: pass
-        try: do_del(P1)
-        except: pass
-        try: do_del(P2)
         except: pass  
         try: do_del(var)
         except: pass
         try: do_del(key)
         except: pass
-        try: do_del(value)
-        except: pass
-        try: do_del(pos_key)
-        except: pass
-        try: do_del(pos_list)
-        except: pass
-        try: do_del(k)
-        except: pass
-        try: do_del(pos)
-        except: pass
         try: do_del(vendor_match)
         except: pass
-        try: do_del(vendor_m)
-        except: pass
-        try: do_del(value_region_acc_to_vendors)
-        except: pass
-        try: do_del(sub_list)
-        except: pass
-        try: do_del(r_p_f)
-        except: pass   
 
         try: gc.collect()
-        except: pass
-
-
+        except: pass        
         
-    #outside loop : update inspection id collection with pass and end time.
-
-
     var = str(inspection_id) + "_result"
     rch.set_json({var:"pass"})
     rch.set_json({"plc_insp_status":True})
@@ -1419,8 +613,6 @@ def start_real_inspection(data1,inspection_id):
         message = "Cannot connect to db"
         status_code = 500
         return message,status_code
-
-
     try:
         dataset = mp.find_one({'_id' : ObjectId(inspection_id)})
         if dataset is None:
@@ -1460,22 +652,15 @@ def start_real_inspection(data1,inspection_id):
     else:
         dataset['num_retry'] = int(len(retry_array)) - 1 
     
-    
-    
     mp.update({'_id' : ObjectId(dataset['_id'])}, {'$set' :  dataset})
 
     #do gc collect here
     gc.collect()
-    
-    #restart django server 
-    subprocess.Popen("supervisorctl restart django_service",shell=True).wait()
 
 
-
-
-#get method
 def get_current_inspection_details_utils(inspection_id):
     #{eval_data}
+    # inspection_id = '63dfce54d4a606636992653e'
 
     #inspection_id =  data['inspection_id']
     if inspection_id is None:
@@ -1511,6 +696,7 @@ def get_current_inspection_details_utils(inspection_id):
         #samp = {}
         rch = CacheHelper()
         details = rch.get_json(str(inspection_id))
+        print(details,'detailsssssssssssssssssssssssssssssssssss')
         var = str(inspection_id) + "_result"
         result = rch.get_json(var)
         
@@ -1518,21 +704,9 @@ def get_current_inspection_details_utils(inspection_id):
             print("details is not None")
             print(details)
      
-            
-        samp['has_line'] = False
-        if jig_type == "AGILIS":
-            var = str(inspection_id) + "_hasline"
-            HAS_LINE = rch.get_json(var)
+        samp['status'] = result 
 
-            if HAS_LINE:
-                samp['has_line'] = True
-                samp['status'] = "fail"
-            else:
-                samp['status'] = result
-        else:
-            samp['status'] = result 
-            
-        
+        blank = []
         """
         if len(blank) == 0:
             samp['evaluation_data'] = details
@@ -1542,30 +716,50 @@ def get_current_inspection_details_utils(inspection_id):
         if details is None:
             samp['evaluation_data'] = details
         else:
-            a_z = details.copy()
-            for i_z in a_z:
-                new_part_number = []
-                part_number = i_z['part_number']
-                for j_z in part_number:
-                    if '_' in str(j_z): 
-                        s_z = j_z.split('_')[0]
-                        new_part_number.append(s_z)
-                    else:
-                        new_part_number.append(j_z)
-                i_z['part_number'] = new_part_number
-                new_res_pn = i_z['result_part_number']
-                if new_res_pn is not None:
-                    if '_' in i_z['result_part_number']:
-                        i_z['result_part_number'] = str(new_res_pn).split('_')[0]
-                
-            samp['evaluation_data'] = a_z
+        
+            if len(blank) == 0:
+        
+                a_z = details.copy()
+                for i_z in a_z:
+                    new_part_number = []
+                    part_number = i_z['part_number']
+                    for j_z in part_number:
+                        if '_' in str(j_z): 
+                            s_z = j_z.split('_')[0]
+                            new_part_number.append(s_z)
+                        else:
+                            new_part_number.append(j_z)
+                    i_z['part_number'] = new_part_number
+                    new_res_pn = i_z['result_part_number']
+                    if new_res_pn is not None:
+                        if '_' in i_z['result_part_number']:
+                            i_z['result_part_number'] = str(new_res_pn).split('_')[0]
+                    
+                samp['evaluation_data'] = a_z
+            else:
+                a_z = blank.copy()
+                for i_z in a_z:
+                    new_part_number = []
+                    part_number = i_z['part_number']
+                    for j_z in part_number:
+                        if '_' in str(j_z): 
+                            s_z = j_z.split('_')[0]
+                            new_part_number.append(s_z)
+                        else:
+                            new_part_number.append(j_z)
+                    i_z['part_number'] = new_part_number
+                    new_res_pn = i_z['result_part_number']
+                    if new_res_pn is not None:
+                        if '_' in i_z['result_part_number']:
+                            i_z['result_part_number'] = str(new_res_pn).split('_')[0]
+
+                samp['evaluation_data'] = a_z
         
         var = str(inspection_id) + "_retry_array"
 
         retry_array = rch.get_json(var)
         
         if retry_array is None:
-            
             print("length of retry array is :0")
         else:
             print("length of retry array is :"+ str(len(retry_array)))
@@ -1628,7 +822,7 @@ def get_current_inspection_details_utils(inspection_id):
                 
         
         report['total_parts_scanned'] = str(Qty_built)      
-        report['previous_barcode_number'] = "AGFS123465"
+        report['previous_barcode_number'] = "  "
         # Previous barcode scanned 
         if len(pq) >= 2:
             #report['previous_barcode_number'] = pq[1]['serial_no']
@@ -1656,15 +850,10 @@ def get_current_inspection_details_utils(inspection_id):
         except : pass
         
         gc.collect()
-        samp = {"Message": "Success!", "data": {"has_line": True, "status": 'Accepted', "evaluation_data": ['k150','k150','k150','k150','k150','k150','k150','k150','k150','k150'], "retry_array": [], "reports": {"process_time": "2021-03-31 16:12:20", "previous_cycle_time": "2021-03-31 16:12:20", "total_parts_scanned": "15", "previous_barcode_number": "F22112007599", "auto_pass": "1", "manual_pass": "0", "fpy": "100.0 %" , "mes_check":"offline"}}}
+        
         #print(samp)
         return samp, 200
     #except:
-    #    message = "error fetching inspection_id and status from redis"
-    #    status_code = 400
-    #    return message,status_code
-
-        
 
 def reject_part(data):
     inspection_id =  data['inspection_id']
@@ -1794,21 +983,19 @@ def force_admin_pass(data):
 
 
 def get_running_process(): #when someone refresh page
-
     try:
         COLL_NAME = "INSPECTION_"+datetime.datetime.now().strftime("%m_%y")
         mp = MongoHelper().getCollection(COLL_NAME)
+        print(datetime.datetime.now())
     except Exception as e:
         message = "Cannot connect to db"
         status_code = 500
         return message,status_code
-
     p = [p for p in mp.find()]
-
     IS_COMPLEATED = True
     dummy_coll = None
-
     for i in p:
+        print(i,'ttttttttttttttttttttttttttttttttttt')
         is_compleated =  i['is_compleated']
 
         if is_compleated is False:
@@ -1822,9 +1009,7 @@ def get_running_process(): #when someone refresh page
         return dummy_coll,200
     else:
         return {},200
-
-
-
+        
 def get_process_retry(inspection_id):
     #inspection_id =  data['inspection_id']
     if inspection_id is None:
@@ -2310,4 +1495,3 @@ def admin_report_reset(data):
         return message, status_code
 
     return p, 200
-

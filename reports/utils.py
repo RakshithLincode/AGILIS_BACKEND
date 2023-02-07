@@ -65,26 +65,26 @@ def detail_report_util(data):
     day = today.strftime("%d")
     month = today.strftime("%m")
     year = today.strftime("20%y")
-    start = (int(year), int(month), int(day))
+    start = str(year) + "-" + str(month) + "-" + str(day) +" "+ '00:00:00'
     end = today + relativedelta(months=-3)
     day = end.strftime("%d")
     month = end.strftime("%m")
     year = end.strftime("20%y")
-    end = (int(year), int(month), int(day))
+    end = str(year) + "-" + str(month) + "-" + str(day) +" "+ '00:00:00'
 
     # start = datetime.date(2021, 12, 23)
-    # print(start)
+    print(start)
     # end = datetime.date(2021, 12, 23)
-    # print(end)
+    print(end)
     
     if (from_date is not None) :
         query_1.append({'createdAt': {"$gte":from_date}})#,"$lte":to_date
-    elif (from_date is None) :
-        query_1.append({'createdAt': {"$gte":str(start)}})#,"$lte":to_date
+    if (from_date is None) :
+        query_1.append({'createdAt': {"$gte":str(end)}})#,"$lte":to_date
     if (to_date is not None) :
         query_1.append({'completedAt': {"$lte":to_date}})
-    elif (to_date is None) :
-        query_1.append({'completedAt': {"$lte":str(end)}})
+    if (to_date is None) :
+        query_1.append({'completedAt': {"$lte":str(start)}})
     if jig_type is not None :
         query_1.append({'jig_details.jig_type': jig_type})
     if on_number is not None :
@@ -167,7 +167,7 @@ def get_name_byid(id):
     command = "SELECT * FROM accounts_user WHERE user_id=" + '\"' + id + '\"'
     #print(command)
 
-    conn = sqlite3.connect('D:/SE_PROJECT/livis-be-se-agilis_be/livis-be-se-agilis_be/db.sqlite3')
+    conn = sqlite3.connect('D:/SE_PROJECT/livis-be-se-agilis_be/livis-be-se-agilis_be/AGILIS_BACKEND/db.sqlite3')
     cursor = conn.cursor()
 #     cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
     cursor.execute(command)
@@ -212,7 +212,7 @@ def write_excel(list_dict, file_name):
     else:
         pass
     ordered_list=list(list_dict[0].keys())
-    pth = "D:/SE_PROJECT/livis-be-se-agilis_be/livis-be-se-agilis_be/datadrive/" + file_name + ".xlsx"
+    pth = "D:/SE_PROJECT/livis-be-se-agilis_be/livis-be-se-agilis_be/AGILIS_BACKEND/datadrive/" + file_name + ".xlsx"
     wb=Workbook(pth)
     ws=wb.add_worksheet("New Sheet") #or leave it blank, default name is "Sheet 1"
     first_row=0
@@ -234,7 +234,7 @@ def export_file(list_dict,file_name):
     fn = write_excel(list_dict, file_name)
     return "http://localhost:3306/"+fn
 
-def detail_report_export_util(data,path ="D:/SE_PROJECT/livis-be-se-agilis_be/livis-be-se-agilis_be/datadrive/"):
+def detail_report_export_util(data,path ="D:/SE_PROJECT/livis-be-se-agilis_be/livis-be-se-agilis_be/AGILIS_BACKEND/datadrive/"):
     list_dict = detail_report_util(data)
     import bson
     bsf = str(bson.ObjectId())

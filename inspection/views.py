@@ -15,6 +15,7 @@ import json
 @csrf_exempt
 #@check_group(['admin'])
 def get_current_inspection_details(data,jig_id):
+    print(jig_id,'jig_id...............................')
     from inspection.tasks import get_current_inspection_details_utils
     message,status_code = get_current_inspection_details_utils(jig_id)
     if status_code == 200:
@@ -29,6 +30,7 @@ def get_current_inspection_details(data,jig_id):
 def get_running_process(data):
     from inspection.tasks import get_running_process
     message,status_code = get_running_process()
+    # print(message,'hhhhhhhddddddddddhhhhhhhhhhhhhhhhhhhh')
     if status_code == 200:
         return HttpResponse(json.dumps({'Message' : 'Success!', 'data' : message}, cls=Encoder), content_type="application/json")
     else:
@@ -44,6 +46,7 @@ def start_process_schneider(request):
     if inspection_id is None:
         return HttpResponse(json.dumps({'Message' : 'Failed!', 'data' : resp}, cls=Encoder), content_type="application/json")
     inspection_id = str(inspection_id)
+    print(config,'fggggggggggvfhvhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh')
     start_real_inspection.delay(config, inspection_id)
     return HttpResponse(json.dumps({'Message' : 'Success!', 'data' : resp}, cls=Encoder), content_type="application/json")
 

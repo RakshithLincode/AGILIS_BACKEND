@@ -61,6 +61,7 @@ class Lucid():
 		self.cameras_dict = {}
 		for d in self.devices:
 			temp = self.get_ser(d)
+			print(temp,'kkkkkkkkkkkkkkkkkkkkkkkkk')
 			self.cameras_dict[self.camera_ips[temp]] = d	
 
 	tries = 0
