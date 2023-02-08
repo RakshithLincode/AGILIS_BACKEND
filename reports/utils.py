@@ -139,7 +139,8 @@ def detail_report_util(data):
                                 'jig_type':r["jig_details"]["jig_type"],
                                 "serial_number":r["serial_no"],
                                 'scanned_at':r["createdAt"],
-                                # "completed_at":r["completedAt"],
+                                # 'heatsink':r["heatsink"],
+                                "completed_at":r["completedAt"],
                                 "status":r["status_end"],
                                 "num_retry":r["num_retry"],
                                 "approved_by":name})
@@ -150,7 +151,8 @@ def detail_report_util(data):
                         'jig_type':r["jig_details"]["jig_type"],
                         "serial_number":r["serial_no"],
                         'scanned_at':r["createdAt"],
-                        # "completed_at":r["completedAt"],
+                        # 'heatsink':r["heatsink"],
+                        "completed_at":r["completedAt"],
                         "num_retry":r["num_retry"],
                         "status":r["status_end"],
                         "approved_by":None})

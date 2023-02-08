@@ -473,6 +473,13 @@ def start_real_inspection(data1,inspection_id):
                     kanban = x.get('kanban')	
                     return kanban
 
+        def heak_sink(oem_number):
+            mp = MongoHelper().getCollection("jig")
+            for x in mp.find():
+                if x['oem_number'] == oem_number:
+                    heak_sink = x.get('heatsink_match')	
+                    return heak_sink              
+
         def check_kanban(actual_value,predicted_value):
             position = {'position_present':[],'position_absent':[]}
             position_actual = []
@@ -658,6 +665,13 @@ def start_real_inspection(data1,inspection_id):
     dataset['duration'] = str(duration)
     dataset['status'] = 'completed'
     dataset['is_compleated'] = True
+    heak_sink_value = heak_sink(oem_number)
+    dataset['heatsink'] = heak_sink_value
+
+
+
+    # dataset['is_compleated'] = True
+
     
     manual_pss = dataset['is_manual_pass']
     manual_rej = dataset['is_reject']
@@ -793,12 +807,17 @@ def get_current_inspection_details_utils(inspection_id):
             print("length of retry array is :"+ str(len(retry_array)))
         
          
+        if retry_array is None:
+            samp['retry_array_count'] = str(0)
+        else:
+            samp['retry_array_count'] = str(len(retry_array))
 
         if retry_array is None:
             samp['retry_array'] = []
         else:
             samp['retry_array'] = retry_array
         
+
 
         report = {}
         ## cycle time 
@@ -912,7 +931,7 @@ def get_current_inspection_details_utils(inspection_id):
         
         gc.collect()
         
-        #print(samp)
+        print(samp)
         return samp, 200
     #except:
 
@@ -1143,7 +1162,7 @@ def continue_process(data):
     
     var = str(inspection_id) + "_retry_array"
     retry_array = rch.get_json(var)
-    if len(retry_array) == 4:
+    if len(retry_array) == 3:
         dataset['is_auto_reject'] = True
         coll = { 
             'is_auto_reject' : True
