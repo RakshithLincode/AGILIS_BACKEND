@@ -269,6 +269,7 @@ def start_inspection(data):
         "status" : 'started',
         'createdAt' : createdAt,
         'is_manual_pass' : False,
+        'is_auto_reject' : False,
         'is_reject':False,
         'is_compleated' : False,
         'serial_no' : barcode_id,
@@ -413,7 +414,12 @@ def start_real_inspection(data1,inspection_id):
 
         is_manual_pass = dataset['is_manual_pass']
         is_reject = dataset['is_reject']
+        is_auto_reject = dataset['is_auto_reject']
 
+
+        if is_auto_reject is True:
+            print("auto reject is true")
+            break
         if is_manual_pass is True:
             print("manual pass is true")
             break
@@ -496,6 +502,25 @@ def start_real_inspection(data1,inspection_id):
                 position['status'] = True
             return  position , isAccepted 
 
+        def convert_value_to_kanban(value):
+            import re
+            for p in value:
+                for i in p['part_number']:
+                    value_test = []
+                    if '_' in i:
+                        end = (len(i))
+                        start = (i.index('_'))
+                        remove = (i[start:end])
+                        new_value = i.replace(remove, '')
+                        value_test.append(new_value)
+                    if not value_test:
+                        pass
+                    else:
+                        p.update({'part_number' : value_test})
+                    # i['part_number'].update(new_value)
+            return value
+                
+
         def find_region_pass_fail(predicted_value,each_value_status,actual_value):
             for i,j,k in zip(predicted_value,each_value_status,actual_value):
                 i['result_part_number'] = i['part_number']
@@ -512,6 +537,7 @@ def start_real_inspection(data1,inspection_id):
         final_dct = {}
         print(oem_number,'hjoemmmmmmmmmmmmmmmmmmmmmmmmm')
         actual_value = get_kanban(str(oem_number))
+        actual_value = convert_value_to_kanban(actual_value)
         print(actual_value,'kkkkkkkkkkkkkkkkkkkkkkkkkkkkkk')
         predict_ocr_value = parallel_process()
         result_dict = convert_value(predict_ocr_value)
@@ -550,7 +576,7 @@ def start_real_inspection(data1,inspection_id):
             else:
                 IS_PROCESS_END = False
         print(IS_PROCESS_END,'isprocesssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss')
-        if IS_PROCESS_END is True:
+        if IS_PROCESS_END is True :
             break
 
         retry_list.append(region_pass_fail)
@@ -635,8 +661,11 @@ def start_real_inspection(data1,inspection_id):
     
     manual_pss = dataset['is_manual_pass']
     manual_rej = dataset['is_reject']
-    
-    if manual_pss:
+    auto_reject = dataset['is_auto_reject']
+
+    if auto_reject:
+        dataset['status_end'] = "Auto Rejected"
+    elif manual_pss:
         dataset['status_end'] = "Manually Pass"
     elif manual_rej:
         dataset['status_end'] = "Manually Rejected"
@@ -644,7 +673,6 @@ def start_real_inspection(data1,inspection_id):
         dataset['status_end'] = "Auto Pass"
     
     var = str(inspection_id) + "_retry_array"
-
     retry_array = rch.get_json(var)
 
     if retry_array is None:
@@ -782,6 +810,10 @@ def get_current_inspection_details_utils(inspection_id):
         report['previous_cycle_time'] = str(prediction_time) + " sec"
         #qty_built : total amt of gvm and gvx built for today 
         Qty_built = 0
+        total_accepted_count = 0
+        total_rejected_count = 0
+        
+		#dataset['inference_urls'] = inference_urls
 
 
         p = [p for p in mp.find().sort( "$natural", -1 )]
@@ -804,11 +836,25 @@ def get_current_inspection_details_utils(inspection_id):
                 #break when manual_reset is hit (is_admin_report_reset)
 
                 is_compleated =  i['is_compleated']
-                if is_compleated is True:
+                if i['is_admin_report_reset'] is True:
+                    Qty_built = Qty_built
+                elif is_compleated is True:
                     Qty_built = Qty_built + 1
-
+                status_end =  i['status_end']
+                if i['is_admin_report_reset'] is True:
+                    total_accepted_count = total_accepted_count
+                elif status_end == 'Auto Pass':
+                    total_accepted_count = total_accepted_count + 1
+                elif status_end == 'Manually Pass':
+                    total_accepted_count = total_accepted_count + 1
+                elif status_end == 'Auto Rejected':
+                    total_rejected_count = total_rejected_count + 1    
+                elif status_end == 'Manually Rejected':
+                    total_rejected_count = total_rejected_count + 1 
+                    
+                      
+            
                 total_inspections = total_inspections + 1
-
                 if i['is_manual_pass'] is True:
                     total_manual_pass = total_manual_pass + 1
                     
@@ -820,7 +866,22 @@ def get_current_inspection_details_utils(inspection_id):
                 if i['is_admin_report_reset'] is True:
                     break
                 
+        # dataset1 = [p for p in mp.find({"status_end":"Auto Pass"})]
+        # dataset2 = [p for p in mp.find({"status_end":"Manually Rejected"})]
+        # dataset3 = [p for p in mp.find({"status_end":"Manually Pass"})]
+
         
+        # total_accepted_count = len(dataset1) + len(dataset3)
+        # total_rejected_count = len(dataset2)
+
+        # if len(dataset) > 0:
+        #     #s = datetime.datetime.strptime(dataset.get('inference_start_time',""), '%Y-%m-%d %H:%M:%S')
+        #     #e = datetime.datetime.strptime(dataset.get('inference_end_time',""), '%Y-%m-%d %H:%M:%S')
+        #     #dataset['duration'] = str(e-s)
+            
+
+        report['total_accepted'] = str(total_accepted_count)
+        report['total_rejected'] = str(total_rejected_count)    
         report['total_parts_scanned'] = str(Qty_built)      
         report['previous_barcode_number'] = "  "
         # Previous barcode scanned 
@@ -1053,7 +1114,7 @@ def get_process_retry(inspection_id):
 
 
 def continue_process(data):
-
+    rch = CacheHelper()
     inspection_id =  data['inspection_id']
     if inspection_id is None:
         message = "inspection_id not provided"
@@ -1079,7 +1140,21 @@ def continue_process(data):
         message = "Invalid inspection ID"
         status_code = 400
         return message,status_code
-
+    
+    var = str(inspection_id) + "_retry_array"
+    retry_array = rch.get_json(var)
+    if len(retry_array) == 4:
+        dataset['is_auto_reject'] = True
+        coll = { 
+            'is_auto_reject' : True
+        }
+        try:
+            mp.update({'_id' : ObjectId(dataset['_id'])}, {'$set' :  coll})
+        except Exception as e:
+            message = "error setting ismanualpass"
+            status_code = 400
+            return message,status_code
+    
     try:
         rch = CacheHelper()
         var = str(ObjectId(dataset['_id'])) + "_paused"
@@ -1089,6 +1164,9 @@ def continue_process(data):
         return "error setting redis",400
 
     return "process continued",200
+
+
+
 
 def get_static(jig_id):
     #inspection_id =  data['inspection_id']
@@ -1474,7 +1552,8 @@ def admin_report_reset(data):
 
 
     try:
-        mp = MongoHelper().getCollection("INSPECTION")
+        COLL_NAME = "INSPECTION_"+datetime.datetime.now().strftime("%m_%y")
+        mp = MongoHelper().getCollection(COLL_NAME)
     except Exception as e:
         message = "Cannot connect to db"
         return message, status_code

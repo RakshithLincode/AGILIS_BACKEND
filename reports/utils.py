@@ -119,9 +119,9 @@ def detail_report_util(data):
         
         
         if bool(query_1):
-            pr_ids = [i['_id'] for i in process_collection.find({"$and":query_1})]
+            pr_ids = [i['_id'] for i in process_collection.find({"$and":query_1}).sort([( '$natural', -1)])]
         else:
-            pr_ids = [i['_id'] for i in process_collection.find()]
+            pr_ids = [i['_id'] for i in process_collection.find().sort([( '$natural', -1)])]
         
 
         for ind , pr_id in enumerate(pr_ids):
